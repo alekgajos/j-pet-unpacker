@@ -521,25 +521,34 @@ int32_t unpacker::get_time_window(
     } // for concentrators
 
     // run additional checks for queue validity
-    std::unordered_map<uint32_t, uint32_t> trigger_id_hist; // create 'oracle' histogram
+    // std::unordered_map<uint32_t, uint32_t> trigger_id_hist; // create 'oracle' histogram
 
-    for (auto const &pair : meta_data.endp_stats) {
-        if ( !trigger_id_hist.count(pair.second.trigger_id) ) { // if key is not present in hist - create it
-            trigger_id_hist[pair.second.trigger_id] = 1;
-        } else {
-            trigger_id_hist[pair.second.trigger_id]++;
-        }
-    }
+    // for ( auto const &pair : meta_data.endp_stats ) {
+    //     if ( !trigger_id_hist.count(pair.second.trigger_id) ) { // if key is not present in hist - create it
+    //         trigger_id_hist[pair.second.trigger_id] = 1;
+    //     } else {
+    //         trigger_id_hist[pair.second.trigger_id]++;
+    //     }
+    // }
 
-    for (auto const &pair : meta_data.endp_stats) {
-        if ( pair.second.trigger_id != (meta_data.tw_trigger_id & 0xFF) ) { // if trigger id does not match concentrator's trigger id
-            if ( trigger_id_hist[pair.second.trigger_id] != meta_data.endp_stats.size() ) { // if all triggers are not the same - it's return error.
-                if ( verbosity > 1 ) {
-                    std::cout << "Error, endpoint " << std::hex << " has different trigger ID." << std::endl;
-                }
+    // for ( auto const &pair : meta_data.endp_stats ) {
+    //     if ( pair.second.trigger_id != (meta_data.tw_trigger_id & 0xFF) ) { // if trigger id does not match concentrator's trigger id
+    //         if ( trigger_id_hist[pair.second.trigger_id] != meta_data.endp_stats.size() ) { // if all triggers are not the same - it's return error.
+    //             if ( verbosity > 1 ) {
+    //                 std::cout << "Error, endpoint " << std::hex << " has different trigger ID." << std::endl;
+    //             }
+    //             return 2;
+    //         }
+    //     }
+    // }
 
-                return 2;
-            }
+    // get any trigger_id
+    auto i = meta_data.endp_stats.begin();
+    uint32_t buff = i->second.trigger_id;
+
+    for ( auto const &pair : meta_data.endp_stats ) {
+        if ( buff != pair.second.trigger_id ) {
+            return 2;
         }
     }
 
