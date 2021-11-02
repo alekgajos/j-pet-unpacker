@@ -4,11 +4,13 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <map>
+#include <unordered_map>
 #include <vector>
 #include <queue>
 #include <fstream>
 #include <iostream>
+
+#include "unpacker_types.hpp"
 
 namespace unpacker {
 
@@ -28,42 +30,7 @@ namespace unpacker {
 
     bool kIsOnline = false; // reject additionals headers from online datastream
 
-    // structs def.
-    typedef struct {
-        uint32_t trigger_id;
-        bool overflow_flag;
-        bool is_reference;
-        uint32_t len;
-    } endp_stats_t;
-
-    typedef struct {
-        // basic info
-        uint32_t queue_id;
-        uint32_t tw_trigger_id;
-
-        // advanced
-        std::map<uint32_t, endp_stats_t> endp_stats;
- 
-        // temp
-        uint32_t raw_trigger_id;
-    } meta_t;
-
-    typedef struct {
-        uint32_t sample; // original word from hld file
-        double time;
-        int32_t channel_id;
-        int32_t is_falling_edge;
-    } hit_t;
-
-    typedef struct {
-        double lead_time;
-        double tot_time;
-        int32_t strip_id;
-        int32_t multiplicity;
-    } sigmat_t;
-
     // functions
-
     inline uint32_t reverse_TDC( uint32_t sample );
     inline uint32_t reverse_TID( uint32_t sample );
     inline uint32_t reverse_DJ( uint32_t sample );
@@ -76,27 +43,27 @@ namespace unpacker {
     int32_t read_queue( std::vector<uint32_t> &data, std::ifstream &fp );
 
     bool load_tdc_calib(
-            const std::map<uint32_t, std::string> &paths_to_tdc_calib, 
-            std::map<uint32_t, std::map<uint32_t, std::vector<uint32_t>>> &tdc_calib );
+            const std::unordered_map<uint32_t, std::string> &paths_to_tdc_calib, 
+            std::unordered_map<uint32_t, std::unordered_map<uint32_t, std::vector<uint32_t>>> &tdc_calib );
 
     int32_t get_time_window( 
             meta_t &meta_data,
-            std::map<uint32_t, std::vector<hit_t>> &original_data, 
-            std::map<uint32_t, std::vector<hit_t>> &filtered_data,
-            std::map<uint32_t, std::vector<sigmat_t>> &preproc_data,
-            const std::map<uint32_t, std::string> &paths_to_tdc_calib,
+            std::unordered_map<uint32_t, std::vector<hit_t>> &original_data, 
+            std::unordered_map<uint32_t, std::vector<hit_t>> &filtered_data,
+            std::unordered_map<uint32_t, std::vector<sigmat_t>> &preproc_data,
+            const std::unordered_map<uint32_t, std::string> &paths_to_tdc_calib,
             std::ifstream &fp );
 
     int32_t get_time_window_repaired( 
             meta_t &fixed_meta_data,
-            std::map<uint32_t, std::vector<hit_t>> &fixed_data,
-            const std::map<uint32_t, std::string> &paths_to_tdc_calib,
+            std::unordered_map<uint32_t, std::vector<hit_t>> &fixed_data,
+            const std::unordered_map<uint32_t, std::string> &paths_to_tdc_calib,
             std::ifstream &fp );
 
     void calculate_time( 
             uint32_t endp_id,
             std::vector<hit_t> &v, 
-            std::map<uint32_t, std::map<uint32_t, std::vector<uint32_t>>> &tdc_calib );
+            std::unordered_map<uint32_t, std::unordered_map<uint32_t, std::vector<uint32_t>>> &tdc_calib );
 
     uint32_t get_ref( const std::vector<hit_t> &v );
 
@@ -247,8 +214,8 @@ int32_t unpacker::read_queue( std::vector<uint32_t> &data, std::ifstream &fp ) {
 
 
 bool unpacker::load_tdc_calib( 
-        const std::map<uint32_t, std::string> &paths_to_tdc_calib, 
-        std::map<uint32_t, std::map<uint32_t, std::vector<uint32_t>>> &tdc_calib ) {
+        const std::unordered_map<uint32_t, std::string> &paths_to_tdc_calib, 
+        std::unordered_map<uint32_t, std::unordered_map<uint32_t, std::vector<uint32_t>>> &tdc_calib ) {
 
     // loads tdc calibrations from .txt file.
     // input map of <16-bit endpoint id, path to tdc calibration file>, e.g. <0xa110, "/storage/tdc_calibs/0xa110.txt">
@@ -286,10 +253,10 @@ bool unpacker::load_tdc_calib(
 
 int32_t unpacker::get_time_window( 
         meta_t &meta_data,
-        std::map<uint32_t, std::vector<hit_t>> &original_data, 
-        std::map<uint32_t, std::vector<hit_t>> &filtered_data,
-        std::map<uint32_t, std::vector<sigmat_t>> &preproc_data,
-        const std::map<uint32_t, std::string> &paths_to_tdc_calib,
+        std::unordered_map<uint32_t, std::vector<hit_t>> &original_data, 
+        std::unordered_map<uint32_t, std::vector<hit_t>> &filtered_data,
+        std::unordered_map<uint32_t, std::vector<sigmat_t>> &preproc_data,
+        const std::unordered_map<uint32_t, std::string> &paths_to_tdc_calib,
         std::ifstream &fp ) {
 
     // input: file descriptor pointing to opened hld file,
@@ -306,7 +273,7 @@ int32_t unpacker::get_time_window(
     // statics...
     static uint32_t queue_id = 0;
     static bool init_run = true;
-    static std::map<uint32_t, std::map<uint32_t, std::vector<uint32_t>>> tdc_calib;
+    static std::unordered_map<uint32_t, std::unordered_map<uint32_t, std::vector<uint32_t>>> tdc_calib;
 
     // during first run load the tdc calibration tables
     if ( init_run == true ) {
@@ -554,7 +521,7 @@ int32_t unpacker::get_time_window(
     } // for concentrators
 
     // run additional checks for queue validity
-    std::map<uint32_t, uint32_t> trigger_id_hist; // create 'oracle' histogram
+    std::unordered_map<uint32_t, uint32_t> trigger_id_hist; // create 'oracle' histogram
 
     for (auto const &pair : meta_data.endp_stats) {
         if ( !trigger_id_hist.count(pair.second.trigger_id) ) { // if key is not present in hist - create it
@@ -583,8 +550,8 @@ int32_t unpacker::get_time_window(
 
 int32_t unpacker::get_time_window_repaired( 
             meta_t &fixed_meta_data,
-            std::map<uint32_t, std::vector<hit_t>> &fixed_data,
-            const std::map<uint32_t, std::string> &paths_to_tdc_calib,
+            std::unordered_map<uint32_t, std::vector<hit_t>> &fixed_data,
+            const std::unordered_map<uint32_t, std::string> &paths_to_tdc_calib,
             std::ifstream &fp ) {
 
     // input: file descriptor pointing to opened hld file,
@@ -593,15 +560,15 @@ int32_t unpacker::get_time_window_repaired(
     // meta data regarding the time window (by reference),
     // operation status (by value) - 0 in case of EOF, 1 in case of success, -1 in case of failure, 2 if the fix was performed successfully.
 
-    static std::map<uint32_t, std::vector<hit_t>> prev_original_data;
+    static std::unordered_map<uint32_t, std::vector<hit_t>> prev_original_data;
     static meta_t prev_meta_data;
 
-    std::map<uint32_t, std::vector<hit_t>> original_data;
+    std::unordered_map<uint32_t, std::vector<hit_t>> original_data;
     meta_t meta_data;
 
     // dummy variables required by 'get_time_window' function
-    std::map<uint32_t, std::vector<hit_t>> filtered_data;
-    std::map<uint32_t, std::vector<sigmat_t>> preproc_data;
+    std::unordered_map<uint32_t, std::vector<hit_t>> filtered_data;
+    std::unordered_map<uint32_t, std::vector<sigmat_t>> preproc_data;
 
     // clear the input structs
     fixed_meta_data.endp_stats.clear();
@@ -632,8 +599,8 @@ int32_t unpacker::get_time_window_repaired(
     bool is_fixed = true;
 
     if ( ret == 2 ) { 
-        std::map<uint32_t, uint32_t> late_endpoints; // those endpoints arrived late. The tw of the rest of endpoints must be taken from previous tw
-        std::map<uint32_t, uint32_t> fixed_endpoints; // will hold the list of endpoints after the fix. Used to check the fix quality
+        std::unordered_map<uint32_t, uint32_t> late_endpoints; // those endpoints arrived late. The tw of the rest of endpoints must be taken from previous tw
+        std::unordered_map<uint32_t, uint32_t> fixed_endpoints; // will hold the list of endpoints after the fix. Used to check the fix quality
                 // ^ endp_id, ^ trigger_id
         
         // for endpoints that were late...
@@ -720,7 +687,7 @@ uint32_t unpacker::get_ref( const std::vector<hit_t> &v ) {
 void unpacker::calculate_time( 
         uint32_t endp_id,
         std::vector<hit_t> &v, 
-        std::map<uint32_t, std::map<uint32_t, std::vector<uint32_t>>> &tdc_calib ) {
+        std::unordered_map<uint32_t, std::unordered_map<uint32_t, std::vector<uint32_t>>> &tdc_calib ) {
 
     // input: endpoint id, vector of tdc samples, tdc-calibration maps.
     // output: modifies the input vector. Fills it with the information
