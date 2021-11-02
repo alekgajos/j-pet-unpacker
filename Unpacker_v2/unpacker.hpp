@@ -6,27 +6,50 @@
 #include <string.h>
 #include <map>
 #include <vector>
+#include <queue>
 #include <fstream>
 #include <iostream>
 
 namespace unpacker {
 
+    // flags and constants
+    uint32_t verbosity = 0; // 0 - none, 1 - crit. errors, 2 - errors/warnings
+
     double kCoarsePeriod = 2352.941; // ps
-    double kFineBinWidth = kCoarsePeriod / 128; // ps, more or less accurate
+    double kFineBinWidth = kCoarsePeriod / 128; // ps, more or less accurate (active TDC bin count is rather hard to be determined [100-128])
     bool kPerformTDCCalib = true;
 
     bool kSkipAfterReferenceSample = true; // unpacker filter, rejects samples that arrived after the reference time
 
-    bool kCapTimeAtThreshold = true; // upacker filter, rejects samples that calculated time are larger than kTimeCapThreshold
+    bool kCapTimeAtThreshold = true; // upacker filter, rejects samples that calculated times are larger than kTimeCapThreshold
     uint32_t kTimeCapThreshold = 50000000; // ps
 
+    uint32_t kOverflowLimit = 400; // if there are more samples in packet, overflow is detected and marked as warning in endp_stats_t struct.
+
+    bool kIsOnline = false; // reject additionals headers from online datastream
+
+    // structs def.
     typedef struct {
-        // TODO: put more debug information
         uint32_t trigger_id;
+        bool overflow_flag;
+        bool is_reference;
+        uint32_t len;
+    } endp_stats_t;
+
+    typedef struct {
+        // basic info
+        uint32_t queue_id;
+        uint32_t tw_trigger_id;
+
+        // advanced
+        std::map<uint32_t, endp_stats_t> endp_stats;
+ 
+        // temp
+        uint32_t raw_trigger_id;
     } meta_t;
 
     typedef struct {
-        uint32_t sample; /* original sample from hld file */
+        uint32_t sample; // original word from hld file
         double time;
         int32_t channel_id;
         int32_t is_falling_edge;
@@ -38,6 +61,8 @@ namespace unpacker {
         int32_t strip_id;
         int32_t multiplicity;
     } sigmat_t;
+
+    // functions
 
     inline uint32_t reverse_TDC( uint32_t sample );
     inline uint32_t reverse_TID( uint32_t sample );
@@ -54,11 +79,17 @@ namespace unpacker {
             const std::map<uint32_t, std::string> &paths_to_tdc_calib, 
             std::map<uint32_t, std::map<uint32_t, std::vector<uint32_t>>> &tdc_calib );
 
-    inline int32_t get_time_window( 
+    int32_t get_time_window( 
             meta_t &meta_data,
             std::map<uint32_t, std::vector<hit_t>> &original_data, 
             std::map<uint32_t, std::vector<hit_t>> &filtered_data,
             std::map<uint32_t, std::vector<sigmat_t>> &preproc_data,
+            const std::map<uint32_t, std::string> &paths_to_tdc_calib,
+            std::ifstream &fp );
+
+    int32_t get_time_window_repaired( 
+            meta_t &fixed_meta_data,
+            std::map<uint32_t, std::vector<hit_t>> &fixed_data,
             const std::map<uint32_t, std::string> &paths_to_tdc_calib,
             std::ifstream &fp );
 
@@ -150,13 +181,19 @@ inline bool unpacker::read_4b( uint32_t *data, std::ifstream &fp ) {
     // output: operation status (by value) - 0 in case of EOF, 1 in case of success;
     // 4-byte hld word (by pointer)
 
+    static uint32_t byte_cntr = 0;
+
     unsigned char buffer[4];
     bool ret = true;
 
     if ( fp.read( (char *)(&buffer[0]), 4) ) {
         *data = buffer[3]<<24 | buffer[2]<<16 | buffer[1]<<8 | buffer[0];
+        byte_cntr+=4;
     } else {
-        std::cout << "EOF" << std::endl;
+        if ( verbosity >  0 ) {
+            std::cout << "EOF" << std::endl;
+        }
+
         ret = false;
     }
 
@@ -173,6 +210,16 @@ int32_t unpacker::read_queue( std::vector<uint32_t> &data, std::ifstream &fp ) {
 
     // make sure vector is empty at the begining
     data.clear();
+
+    // dump some headers from online analysis
+    if ( kIsOnline ) {
+        for (uint32_t i=0; i < 7; i++) {
+            int32_t succ = unpacker::read_4b( &buff, fp );
+            if ( !succ ) {
+                return 0;
+            }
+        }
+    }
 
     // read first queue word which contains queue's length
     int32_t succ = unpacker::read_4b( &buff, fp );
@@ -213,7 +260,10 @@ bool unpacker::load_tdc_calib(
         std::ifstream calib_file(pair.second);
         
         if (!calib_file) {
-            std::cout << "Error! File " << pair.second.c_str() << " could not be open." << std::endl;
+            if ( verbosity > 0 ) {
+                std::cout << "Error! File " << pair.second.c_str() << " could not be open." << std::endl;
+            }
+
             return 0;
         }
 
@@ -228,10 +278,6 @@ bool unpacker::load_tdc_calib(
                 calib.clear();
             } 
         }
-
-        // if ( loop_cntr != 128*105 ) { // return on error
-        //     return 0;
-        // }
     }
     
     return true;
@@ -250,19 +296,44 @@ int32_t unpacker::get_time_window(
     // paths to tdc calibrations.
     // output: original, filtered and preproc data if found (by reference), 
     // meta data regarding the time window (by reference),
-    // operation status (by value) - 0 in case of EOF, 1 in case of success, -1 in case of failure.
+    // operation status (by value) - 0 in case of EOF, 1 in case of success, -1 in case of failure, 2 in case of error that may be recoverable
 
+    // clear the output structes
+    original_data.clear();
+    filtered_data.clear();
+    preproc_data.clear();
+    
+    // statics...
+    static uint32_t queue_id = 0;
     static bool init_run = true;
     static std::map<uint32_t, std::map<uint32_t, std::vector<uint32_t>>> tdc_calib;
 
     // during first run load the tdc calibration tables
     if ( init_run == true ) {
         init_run = false;
-        int32_t succ = load_tdc_calib(paths_to_tdc_calib, tdc_calib);
-        
-        if ( !succ ) {
-            std::cout << "Error, TDC mapping tables were not loaded correctly" << std::endl;
-            return -1;
+
+        if ( kPerformTDCCalib ) {
+            int32_t succ = load_tdc_calib(paths_to_tdc_calib, tdc_calib);
+            
+            if ( !succ ) {
+                if ( verbosity > 0 ) {
+                    std::cout << "Error, TDC mapping tables were not loaded correctly" << std::endl;
+                }
+
+                return -1;
+            }
+        }
+
+        // read file header from online data-stream
+        if ( kIsOnline ) {
+            uint32_t buff;
+
+            for (uint32_t i=0; i < 16; i++) {
+                int32_t succ = unpacker::read_4b( &buff, fp );
+                if ( !succ ) {
+                    return 0;
+                }
+            }
         }
     }
 
@@ -275,6 +346,8 @@ int32_t unpacker::get_time_window(
             return 0;
         }
 
+        queue_id++;
+
         if ( raw_data[0] <= 0x20 ) {
             // the queue is too small, contains just the headers of it
             continue;
@@ -283,19 +356,16 @@ int32_t unpacker::get_time_window(
         }
     }
 
-    // int i = 0;
-    // for (auto const &val : raw_data) {
-    //     std::cout << std::dec << i << " " << std::hex << reverse_TDC(val) << std::endl;
-    //     i++;
-    // }
+    // initialize meta data structure
+    meta_data.endp_stats.clear();
+    meta_data.queue_id = queue_id;
+    meta_data.tw_trigger_id = 0;
 
     // prefill the output maps with raw data
     uint32_t qi = 8; // qi is the queue iterator. It points to the currently
             // preprocessed word. Rest of iterators (such as ci, ei) is
             // just for help. Initially qi is set to 8 to skip first 8 words of queue, 
             // as these are its headers
-
-    uint32_t error_cntr = 0;
 
     // loop over concentrators...
     foreach_concentrator : for (; qi < raw_data.size(); ) {
@@ -306,17 +376,16 @@ int32_t unpacker::get_time_window(
                 uint32_t buff = reverse_DJ(raw_data[qi]);
 
                 // not a valid concentrator, not a valid endpoint. Probably wandering around...
-                if ( (buff & 0xf0ffffff) != 0xA0030000 ) { 
+                if ( (buff & 0xf0ffffff) != 0xA0000000 ) { 
                     break;
                 }
             }
-
+            
             if ( ci == 3 ) {
-                meta_data.trigger_id = reverse_TID(raw_data[qi]);
+                meta_data.tw_trigger_id = reverse_TID(raw_data[qi]);
+                meta_data.raw_trigger_id = reverse_DJ(raw_data[qi]);
             }
         }
-
-        uint32_t endp_trg_num = 0;
 
         // loop over endpoints...
         foreach_endpoint : for (; qi < raw_data.size(); ) {
@@ -333,6 +402,7 @@ int32_t unpacker::get_time_window(
                 // do nothing, this is endpoint
             } else if ( endp_id == 0xffff && endp_len != 0xffff ) {
                 qi += endp_len; // skip the invalid name endpoint
+                continue;
             } else {
                 // if here, it means the current data sample does not come from endpoint.
                 // it might be concentrator, padding or next queue.
@@ -356,14 +426,16 @@ int32_t unpacker::get_time_window(
                             // skip the two words of headers, and two
                             // words of trailers in the endpoint.
                             
-                            //
+                            // header 1
+                            // if ( ei == 0 ) { 
+                            // }
+
+                            // header 2
                             if ( ei == 1 ) {
-                                if ( endp_trg_num != 0 && endp_trg_num != reverse_TDC(raw_data[qi]) ) {
-                                    std::cout << "Error, trigger mismatch on endpoint " << std::hex << endp_id << 
-                                            ". Trigger should be " << endp_trg_num << ", but is " << reverse_TDC(raw_data[qi]) << std::endl;
-                                    return -1;
-                                }
-                                endp_trg_num = reverse_TDC(raw_data[qi]);
+                                // fill the meta data structure
+                                meta_data.endp_stats[endp_id].trigger_id = (reverse_TDC(raw_data[qi]) & 0xFF);
+                                meta_data.endp_stats[endp_id].overflow_flag = ((reverse_TDC(raw_data[qi]) >> 12) & 0x1);
+                                meta_data.endp_stats[endp_id].len = endp_len;
                             }
 
                             continue; 
@@ -381,6 +453,14 @@ int32_t unpacker::get_time_window(
                         buff_v.push_back(buff);
                     } // for
 
+                    // run additional stats to see if the reference time is present. Unfortunatelly this needs to be done here.
+                    uint32_t ref = get_ref(buff_v);
+                    if ( ref == 0 ) {
+                        meta_data.endp_stats[endp_id].is_reference = false;
+                    } else {
+                        meta_data.endp_stats[endp_id].is_reference = true;
+                    }
+
                     calculate_time(endp_id, buff_v, tdc_calib); // fill the time information
 
                     // load only if the vector size if larger than 0
@@ -392,7 +472,7 @@ int32_t unpacker::get_time_window(
 
                 } // case A
                 
-                case 0xB: {
+                case 0xB: { // TODO: validate
 
                     std::vector<hit_t> buff_v;
 
@@ -417,7 +497,7 @@ int32_t unpacker::get_time_window(
 
                 } // case B
 
-                case 0xC: {
+                case 0xC: { // TODO: finish :) and validate
 
                     std::vector<sigmat_t> buff_v;
 
@@ -454,7 +534,10 @@ int32_t unpacker::get_time_window(
                 } // case C
 
                 default: {
-                    // std::cout << "Warning: endpoint id " << std::hex << endp_id << " of length " << endp_len << " not recognized." << std::endl;
+                    if ( verbosity > 1 ) {
+                        std::cout << "Error, unrecognized sequence" << std::endl;
+                    }
+
                     break;
                     // return -1; // idk, maybe it should return...?
                 }
@@ -470,8 +553,147 @@ int32_t unpacker::get_time_window(
 
     } // for concentrators
 
+    // run additional checks for queue validity
+    std::map<uint32_t, uint32_t> trigger_id_hist; // create 'oracle' histogram
+
+    for (auto const &pair : meta_data.endp_stats) {
+        if ( !trigger_id_hist.count(pair.second.trigger_id) ) { // if key is not present in hist - create it
+            trigger_id_hist[pair.second.trigger_id] = 1;
+        } else {
+            trigger_id_hist[pair.second.trigger_id]++;
+        }
+    }
+
+    for (auto const &pair : meta_data.endp_stats) {
+        if ( pair.second.trigger_id != (meta_data.tw_trigger_id & 0xFF) ) { // if trigger id does not match concentrator's trigger id
+            if ( trigger_id_hist[pair.second.trigger_id] != meta_data.endp_stats.size() ) { // if all triggers are not the same - it's return error.
+                if ( verbosity > 1 ) {
+                    std::cout << "Error, endpoint " << std::hex << " has different trigger ID." << std::endl;
+                }
+
+                return 2;
+            }
+        }
+    }
+
     // return '1' if whole queue was read without errors
     return 1;
+}
+
+
+int32_t unpacker::get_time_window_repaired( 
+            meta_t &fixed_meta_data,
+            std::map<uint32_t, std::vector<hit_t>> &fixed_data,
+            const std::map<uint32_t, std::string> &paths_to_tdc_calib,
+            std::ifstream &fp ) {
+
+    // input: file descriptor pointing to opened hld file,
+    // paths to tdc calibrations.
+    // output: fixed data if found (by reference), 
+    // meta data regarding the time window (by reference),
+    // operation status (by value) - 0 in case of EOF, 1 in case of success, -1 in case of failure, 2 if the fix was performed successfully.
+
+    static std::map<uint32_t, std::vector<hit_t>> prev_original_data;
+    static meta_t prev_meta_data;
+
+    std::map<uint32_t, std::vector<hit_t>> original_data;
+    meta_t meta_data;
+
+    // dummy variables required by 'get_time_window' function
+    std::map<uint32_t, std::vector<hit_t>> filtered_data;
+    std::map<uint32_t, std::vector<sigmat_t>> preproc_data;
+
+    // clear the input structs
+    fixed_meta_data.endp_stats.clear();
+    fixed_data.clear();
+
+    int32_t ret = get_time_window(meta_data, original_data, filtered_data, preproc_data, paths_to_tdc_calib, fp);
+
+    if ( ret == -1 || ret == 0 ) { // return normally on error or eof. There's nothing to be fixed.
+        return ret;
+    }
+
+    if ( ret == 1 ) {
+        prev_original_data.clear();
+        prev_original_data = original_data;
+        prev_meta_data.endp_stats.clear();
+        prev_meta_data = meta_data;
+
+        // assing outputs
+        fixed_data = original_data;
+        fixed_meta_data = meta_data;
+
+        return ret;
+    }
+    
+    // at this point the 'ret' from 'get_time_window' was 2, try to fix
+
+    // flag of the quality of the fix.
+    bool is_fixed = true;
+
+    if ( ret == 2 ) { 
+        std::map<uint32_t, uint32_t> late_endpoints; // those endpoints arrived late. The tw of the rest of endpoints must be taken from previous tw
+        std::map<uint32_t, uint32_t> fixed_endpoints; // will hold the list of endpoints after the fix. Used to check the fix quality
+                // ^ endp_id, ^ trigger_id
+        
+        // for endpoints that were late...
+        for ( auto const &pair : meta_data.endp_stats ) {
+            if ( original_data.count(pair.first) ) { // check only time windows that have data
+                if ( pair.second.trigger_id == ((meta_data.tw_trigger_id - 1) & 0xFF) ) { // endpoint tw is a mismatch (endpoints was late)
+                    late_endpoints[pair.first] = pair.second.trigger_id; // append a list of endpoints that are from current tw.
+
+                    // save the data of this endpoint
+                    fixed_endpoints[pair.first] = pair.second.trigger_id;
+                    fixed_data[pair.first] = original_data[pair.first];
+                    fixed_meta_data.endp_stats[pair.first] = pair.second;
+                }
+            }
+        }
+
+        // for the rest of the endpoints
+        for ( auto const &pair : prev_meta_data.endp_stats ) { // take data from previous tw
+            if ( !late_endpoints.count(pair.first) ) { // must not be in 'late_endpoints' list
+                if ( prev_original_data.count(pair.first) ) { // must have some data in tw
+                    // save the data of this endpoint
+                    fixed_endpoints[pair.first] = pair.second.trigger_id;
+                    fixed_data[pair.first] = prev_original_data[pair.first];
+                    fixed_meta_data.endp_stats[pair.first] = prev_meta_data.endp_stats[pair.first];
+                }
+            }
+        }
+
+        // validate the fix...
+
+        // get any trigger_id in 'fixed_endpoints' list
+        auto i = fixed_endpoints.begin();
+        uint32_t buff = i->second; 
+
+        for ( auto const &pair : fixed_endpoints ) {
+            if ( buff != pair.second ) { // at least one trigger_id in 'fixed_endpoints' list differ...
+                if ( verbosity > 1 ) {
+                    std::cout << "Error, time-window " << std::hex << meta_data.tw_trigger_id << " could not be fixed..." << std::endl;
+                }
+                // mark fixed as invalid
+                is_fixed = false;
+            }
+        }
+
+        // assign the rest of meta_data infos
+        fixed_meta_data.queue_id = meta_data.queue_id;
+        fixed_meta_data.tw_trigger_id = prev_meta_data.tw_trigger_id; // ... valid?
+    }
+
+    // fill the 'previous window' data structes
+    prev_original_data.clear();
+    prev_original_data = original_data;
+    prev_meta_data.endp_stats.clear();
+    prev_meta_data = meta_data;
+
+    // at this point the ret from the 'get_time_window' can be only '2'.
+    // return '2' in case of successful fix, '-1' on fail (time-window should not be used)
+
+    return is_fixed ? 2 : -1;
+   
 }
 
 
@@ -585,5 +807,6 @@ void unpacker::calculate_time(
         }
     }
 }
+
 
 #endif
