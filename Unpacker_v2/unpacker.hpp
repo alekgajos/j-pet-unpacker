@@ -514,33 +514,13 @@ int32_t unpacker::get_time_window(
         } // for enpoints
 
         // skip the padding
-        if ( raw_data[qi] == 0x05050505 ) {
+        if ( ( qi < raw_data.size() ) && ( raw_data[qi] == 0x05050505 ) ) {
             qi++;
         }
 
     } // for concentrators
 
-    // run additional checks for queue validity
-    // std::unordered_map<uint32_t, uint32_t> trigger_id_hist; // create 'oracle' histogram
-
-    // for ( auto const &pair : meta_data.endp_stats ) {
-    //     if ( !trigger_id_hist.count(pair.second.trigger_id) ) { // if key is not present in hist - create it
-    //         trigger_id_hist[pair.second.trigger_id] = 1;
-    //     } else {
-    //         trigger_id_hist[pair.second.trigger_id]++;
-    //     }
-    // }
-
-    // for ( auto const &pair : meta_data.endp_stats ) {
-    //     if ( pair.second.trigger_id != (meta_data.tw_trigger_id & 0xFF) ) { // if trigger id does not match concentrator's trigger id
-    //         if ( trigger_id_hist[pair.second.trigger_id] != meta_data.endp_stats.size() ) { // if all triggers are not the same - it's return error.
-    //             if ( verbosity > 1 ) {
-    //                 std::cout << "Error, endpoint " << std::hex << " has different trigger ID." << std::endl;
-    //             }
-    //             return 2;
-    //         }
-    //     }
-    // }
+    // run additional check to see if the queue is valid
 
     // get any trigger_id
     auto i = meta_data.endp_stats.begin();
@@ -550,6 +530,8 @@ int32_t unpacker::get_time_window(
         if ( buff != pair.second.trigger_id ) {
             return 2;
         }
+
+        buff = pair.second.trigger_id;
     }
 
     // return '1' if whole queue was read without errors
@@ -614,14 +596,15 @@ int32_t unpacker::get_time_window_repaired(
         
         // for endpoints that were late...
         for ( auto const &pair : meta_data.endp_stats ) {
-            if ( original_data.count(pair.first) ) { // check only time windows that have data
-                if ( pair.second.trigger_id == ((meta_data.tw_trigger_id - 1) & 0xFF) ) { // endpoint tw is a mismatch (endpoints was late)
-                    late_endpoints[pair.first] = pair.second.trigger_id; // append a list of endpoints that are from current tw.
+            if ( pair.second.trigger_id != ((meta_data.tw_trigger_id) & 0xFF) ) { // endpoint tw is a mismatch (endpoints was late)
+                late_endpoints[pair.first] = pair.second.trigger_id; // append a list of endpoints that are from current tw.
 
-                    // save the data of this endpoint
-                    fixed_endpoints[pair.first] = pair.second.trigger_id;
+                // save the data of this endpoint
+                fixed_endpoints[pair.first] = pair.second.trigger_id;
+                fixed_meta_data.endp_stats[pair.first] = pair.second;
+
+                if ( original_data.count(pair.first) ) { // make sure there's anything to be assigned from
                     fixed_data[pair.first] = original_data[pair.first];
-                    fixed_meta_data.endp_stats[pair.first] = pair.second;
                 }
             }
         }
@@ -629,29 +612,33 @@ int32_t unpacker::get_time_window_repaired(
         // for the rest of the endpoints
         for ( auto const &pair : prev_meta_data.endp_stats ) { // take data from previous tw
             if ( !late_endpoints.count(pair.first) ) { // must not be in 'late_endpoints' list
-                if ( prev_original_data.count(pair.first) ) { // must have some data in tw
-                    // save the data of this endpoint
-                    fixed_endpoints[pair.first] = pair.second.trigger_id;
+                // save the data of this endpoint
+                fixed_endpoints[pair.first] = pair.second.trigger_id;
+                fixed_meta_data.endp_stats[pair.first] = pair.second;
+
+                if ( prev_original_data.count(pair.first) ) { // make sure there's anything to be assigned from
                     fixed_data[pair.first] = prev_original_data[pair.first];
-                    fixed_meta_data.endp_stats[pair.first] = prev_meta_data.endp_stats[pair.first];
                 }
             }
         }
 
-        // validate the fix...
+        // validate the fix...       
+        if ( fixed_endpoints.size() != 0 ) {
+            // get any trigger_id in 'fixed_endpoints' list
+            auto i = fixed_endpoints.begin();
+            uint32_t buff = i->second; 
 
-        // get any trigger_id in 'fixed_endpoints' list
-        auto i = fixed_endpoints.begin();
-        uint32_t buff = i->second; 
-
-        for ( auto const &pair : fixed_endpoints ) {
-            if ( buff != pair.second ) { // at least one trigger_id in 'fixed_endpoints' list differ...
-                if ( verbosity > 1 ) {
-                    std::cout << "Error, time-window " << std::hex << meta_data.tw_trigger_id << " could not be fixed..." << std::endl;
+            for ( auto const &pair : fixed_endpoints ) {
+                if ( buff != pair.second ) { // at least one trigger_id in 'fixed_endpoints' list differ...
+                    if ( verbosity > 1 ) {
+                        std::cout << "Error, time-window " << std::hex << meta_data.tw_trigger_id << " could not be fixed..." << std::endl;
+                    }
+                    // mark fixed as invalid
+                    is_fixed = false;
                 }
-                // mark fixed as invalid
-                is_fixed = false;
             }
+        } else {
+            is_fixed = false;
         }
 
         // assign the rest of meta_data infos
