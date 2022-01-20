@@ -12,6 +12,9 @@
 
 #include "unpacker_types.hpp"
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-label"
+
 namespace unpacker {
 
     // flags and constants
@@ -820,5 +823,5 @@ void unpacker::calculate_time(
     }
 }
 
-
+#pragma GCC diagnostic pop
 #endif
