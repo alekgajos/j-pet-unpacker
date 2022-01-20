@@ -376,7 +376,7 @@ int32_t unpacker::get_time_window(
                 break; 
             }
 
-            // determin the data type of the packet to unpack it correctly
+            // determine the data type of the packet to unpack it correctly
             uint32_t data_type = endp_id >> 12; // will result A (original), B (prefiltered), C (preprocessed)
 
             switch (data_type) {
@@ -437,7 +437,7 @@ int32_t unpacker::get_time_window(
 
                     break;
 
-                } // case A
+                } // case A 
                 
                 case 0xB: { // TODO: validate
 
@@ -468,35 +468,84 @@ int32_t unpacker::get_time_window(
 
                     std::vector<sigmat_t> buff_v;
 
-                    foreach_preprocessed_data : for (uint32_t ei=0; qi < raw_data.size() && ei < endp_len; (qi % 2 == 1 ? ei++ : ei=ei), qi++ ) {
-                        // TODO decoding                                           ^ (!) increment only on even word
+                    // there is some sigmat hexes from the endpoint
+                    if (endp_len > 2) {
 
                         uint32_t low_word;
                         uint32_t high_word;
 
-                        if ( qi % 2 == 0 ) {
-                            low_word = reverse_TDC(raw_data[qi]);
-                        } else {
-                            high_word = reverse_TDC(raw_data[qi]);
+                        foreach_preprocessed_data : for (uint32_t ei=0; qi < raw_data.size() && ei < endp_len; ei++, qi++ ) {
+                            // ei is the endpoint word helper-iterator.
+                            // qi is the queue iterator. It points to the currently
+                            // preprocessed word. Rest of iterators (such as ci, ei) is
+                            // just for help. Initially qi is set to 8 to skip first 8 words of queue, 
+                            // as these are its headers
+                            
 
-                            uint64_t tdc_word = ((uint64_t) high_word) << 32 | low_word;
+                            if (ei != 0 && ei != endp_len - 1) {  // process only data between the header and the trailer
 
-                            sigmat_t buff = {
-                                .lead_time = 0,
-                                .tot_time = 0,
-                                .strip_id = 0,
-                                .multiplicity = 0                               
-                            };
+                                if (ei % 2 == 1) { // odd is the lower data part
+                                    low_word = reverse_TDC(raw_data[qi]);
+                                }
+                                else { // even is the upper data part and completes a sigmat
+                                    high_word = reverse_TDC(raw_data[qi]);
+                                    
+                                    sigmat_t buff;
+                                    buff.lead_time = low_word & (0x03ffffff);
+                                    buff.tot_time = high_word & (0x03ffffff);
+                                    buff.strip_id = (low_word & 0x3c000000) >> 26;
+                                    buff.multiplicity = (high_word & 0x3c000000) >> 26;
+                                    
+                                    buff_v.push_back(buff);
+                                }
+                            }
 
-                            buff_v.push_back(buff);
+                            if (buff_v.size() > 0) {
+                                preproc_data[endp_id] = buff_v;
+                            }
                         }
-
-                        
-                    } // for
-
-                    preproc_data[endp_id] = buff_v;
+                    }
+                    // no sigmat hexes, skip the headers and proceed
+                    else {
+                        qi += 2;
+                    }
 
                     break;
+
+                    
+                    // foreach_preprocessed_data : for (uint32_t ei=0; qi < raw_data.size() && ei < endp_len; (qi % 2 == 1 ? ei++ : ei=ei), qi++ ) {
+                    //     // TODO decoding                                           ^ (!) increment only on even word
+
+                    //     uint32_t low_word;
+                    //     uint32_t high_word;
+
+                    //     std::cout<<"w: "<<std::hex<<raw_data[qi]<<std::endl;
+
+                    //     if ( qi % 2 == 0 ) {
+                    //         low_word = reverse_TDC(raw_data[qi]);
+                    //     } else {
+                    //         high_word = reverse_TDC(raw_data[qi]);
+
+                    //         uint64_t tdc_word = ((uint64_t) high_word) << 32 | low_word;
+
+                    //         sigmat_t buff = {
+                    //             .lead_time = 0,
+                    //             .tot_time = 0,
+                    //             .strip_id = 0,
+                    //             .multiplicity = 0                               
+                    //         };
+
+                    //         std::cout<<"got strip "<<buff.strip_id<<std::endl;
+
+                    //         buff_v.push_back(buff);
+                    //     }
+
+                        
+                    // } // for
+
+                    // preproc_data[endp_id] = buff_v;
+
+                    // break;
 
                 } // case C
 
