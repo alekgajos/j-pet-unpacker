@@ -12,6 +12,10 @@
 
 #include "unpacker_types.hpp"
 
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-label"
+
 namespace unpacker {
 
     // flags and constants
@@ -40,13 +44,13 @@ namespace unpacker {
     inline int32_t get_edge( uint32_t sample );
 
     inline bool read_4b( uint32_t *data, std::ifstream &fp );
-    int32_t read_queue( std::vector<uint32_t> &data, std::ifstream &fp );
+    static int32_t read_queue( std::vector<uint32_t> &data, std::ifstream &fp );
 
-    bool load_tdc_calib(
+    static bool load_tdc_calib(
             const std::unordered_map<uint32_t, std::string> &paths_to_tdc_calib, 
             std::unordered_map<uint32_t, std::unordered_map<uint32_t, std::vector<uint32_t>>> &tdc_calib );
 
-    int32_t get_time_window( 
+    static int32_t get_time_window( 
             meta_t &meta_data,
             std::unordered_map<uint32_t, std::vector<hit_t>> &original_data, 
             std::unordered_map<uint32_t, std::vector<hit_t>> &filtered_data,
@@ -54,18 +58,18 @@ namespace unpacker {
             const std::unordered_map<uint32_t, std::string> &paths_to_tdc_calib,
             std::ifstream &fp );
 
-    int32_t get_time_window_repaired( 
+    static int32_t get_time_window_repaired( 
             meta_t &fixed_meta_data,
             std::unordered_map<uint32_t, std::vector<hit_t>> &fixed_data,
             const std::unordered_map<uint32_t, std::string> &paths_to_tdc_calib,
             std::ifstream &fp );
 
-    void calculate_time( 
+    static void calculate_time( 
             uint32_t endp_id,
             std::vector<hit_t> &v, 
             std::unordered_map<uint32_t, std::unordered_map<uint32_t, std::vector<uint32_t>>> &tdc_calib );
 
-    uint32_t get_ref( const std::vector<hit_t> &v );
+    static uint32_t get_ref( const std::vector<hit_t> &v );
 
 }; // namespace unpacker
 
@@ -168,7 +172,7 @@ inline bool unpacker::read_4b( uint32_t *data, std::ifstream &fp ) {
 }
 
 
-int32_t unpacker::read_queue( std::vector<uint32_t> &data, std::ifstream &fp ) {
+static int32_t unpacker::read_queue( std::vector<uint32_t> &data, std::ifstream &fp ) {
     // input: file descriptor pointing to opened hld file
     // output: std::vector filled with raw data from single EventBuilder queue (by reference),
     // operation status (by value) - 0 eof, 1 success
@@ -213,7 +217,7 @@ int32_t unpacker::read_queue( std::vector<uint32_t> &data, std::ifstream &fp ) {
 }
 
 
-bool unpacker::load_tdc_calib( 
+static bool unpacker::load_tdc_calib( 
         const std::unordered_map<uint32_t, std::string> &paths_to_tdc_calib, 
         std::unordered_map<uint32_t, std::unordered_map<uint32_t, std::vector<uint32_t>>> &tdc_calib ) {
 
@@ -251,7 +255,7 @@ bool unpacker::load_tdc_calib(
 } 
 
 
-int32_t unpacker::get_time_window( 
+static int32_t unpacker::get_time_window( 
         meta_t &meta_data,
         std::unordered_map<uint32_t, std::vector<hit_t>> &original_data, 
         std::unordered_map<uint32_t, std::vector<hit_t>> &filtered_data,
@@ -588,7 +592,7 @@ int32_t unpacker::get_time_window(
 }
 
 
-int32_t unpacker::get_time_window_repaired( 
+static int32_t unpacker::get_time_window_repaired( 
             meta_t &fixed_meta_data,
             std::unordered_map<uint32_t, std::vector<hit_t>> &fixed_data,
             const std::unordered_map<uint32_t, std::string> &paths_to_tdc_calib,
@@ -709,7 +713,7 @@ int32_t unpacker::get_time_window_repaired(
 }
 
 
-uint32_t unpacker::get_ref( const std::vector<hit_t> &v ) {
+static uint32_t unpacker::get_ref( const std::vector<hit_t> &v ) {
 
     // input: vector of tdc samples,
     // output: reference channel
@@ -729,7 +733,7 @@ uint32_t unpacker::get_ref( const std::vector<hit_t> &v ) {
 }
 
 
-void unpacker::calculate_time( 
+static void unpacker::calculate_time( 
         uint32_t endp_id,
         std::vector<hit_t> &v, 
         std::unordered_map<uint32_t, std::unordered_map<uint32_t, std::vector<uint32_t>>> &tdc_calib ) {
@@ -820,5 +824,5 @@ void unpacker::calculate_time(
     }
 }
 
-
+#pragma GCC diagnostic pop
 #endif
