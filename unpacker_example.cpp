@@ -2,6 +2,7 @@
 #include <fstream>
 #include <string>
 #include <sstream>
+#include <unordered_map>
 
 int main(int argc, char **argv)
 {
@@ -10,10 +11,10 @@ int main(int argc, char **argv)
     std::vector<unsigned int> data;
 
     unpacker::meta_t meta_data;
-    std::map<unsigned int, std::vector<unpacker::hit_t>> original_data;
-    std::map<unsigned int, std::vector<unpacker::hit_t>> filtered_data;
-    std::map<unsigned int, std::vector<unpacker::sigmat_t>> preproc_data;
-    std::map<unsigned int, std::string> paths_to_tdc_calib;
+    std::unordered_map<unsigned int, std::vector<unpacker::hit_t>> original_data;
+    std::unordered_map<unsigned int, std::vector<unpacker::hit_t>> filtered_data;
+    std::unordered_map<unsigned int, std::vector<unpacker::sigmat_t>> preproc_data;
+    std::unordered_map<unsigned int, std::string> paths_to_tdc_calib;
     
     for (int i=1; i<=4; i++)
         for (int j=1; j<=12; j++)
