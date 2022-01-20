@@ -33,6 +33,8 @@ namespace unpacker {
 
     bool kIsOnline = false; // reject additionals headers from online datastream
 
+    tdc_calib_t fTDCCalib;
+  
     // functions
     inline uint32_t reverse_TDC( uint32_t sample );
     inline uint32_t reverse_TID( uint32_t sample );
@@ -45,22 +47,19 @@ namespace unpacker {
     inline bool read_4b( uint32_t *data, std::ifstream &fp );
     int32_t read_queue( std::vector<uint32_t> &data, std::ifstream &fp );
 
-    bool load_tdc_calib(
-            const std::unordered_map<uint32_t, std::string> &paths_to_tdc_calib, 
-            std::unordered_map<uint32_t, std::unordered_map<uint32_t, std::vector<uint32_t>>> &tdc_calib );
-
+    bool load_tdc_calib(const std::unordered_map<uint32_t, std::string> &paths_to_tdc_calib);
+    inline void set_tdc_calib(tdc_calib_t& calib_data);
+  
     int32_t get_time_window( 
             meta_t &meta_data,
             std::unordered_map<uint32_t, std::vector<hit_t>> &original_data, 
             std::unordered_map<uint32_t, std::vector<hit_t>> &filtered_data,
             std::unordered_map<uint32_t, std::vector<sigmat_t>> &preproc_data,
-            const std::unordered_map<uint32_t, std::string> &paths_to_tdc_calib,
             std::ifstream &fp );
 
     int32_t get_time_window_repaired( 
             meta_t &fixed_meta_data,
             std::unordered_map<uint32_t, std::vector<hit_t>> &fixed_data,
-            const std::unordered_map<uint32_t, std::string> &paths_to_tdc_calib,
             std::ifstream &fp );
 
     void calculate_time( 
@@ -215,14 +214,16 @@ int32_t unpacker::read_queue( std::vector<uint32_t> &data, std::ifstream &fp ) {
     return 1;
 }
 
+inline void unpacker::set_tdc_calib(tdc_calib_t& calib_data)
+{
+  fTDCCalib = calib_data;
+}
 
 bool unpacker::load_tdc_calib( 
-        const std::unordered_map<uint32_t, std::string> &paths_to_tdc_calib, 
-        std::unordered_map<uint32_t, std::unordered_map<uint32_t, std::vector<uint32_t>>> &tdc_calib ) {
+        const std::unordered_map<uint32_t, std::string> &paths_to_tdc_calib) {
 
-    // loads tdc calibrations from .txt file.
+    // loads tdc calibrations from .txt files.
     // input map of <16-bit endpoint id, path to tdc calibration file>, e.g. <0xa110, "/storage/tdc_calibs/0xa110.txt">
-    // output 
 
     for (auto const &pair : paths_to_tdc_calib) {
         uint32_t id = pair.first;
@@ -234,7 +235,8 @@ bool unpacker::load_tdc_calib(
                 std::cout << "Error! File " << pair.second.c_str() << " could not be open." << std::endl;
             }
 
-            return 0;
+            kPerformTDCCalib = false;
+            return false;
         }
 
         uint32_t buff;
@@ -244,12 +246,13 @@ bool unpacker::load_tdc_calib(
             calib.push_back(buff);
 
             if ( loop_cntr % 128 == 0 ) {
-                tdc_calib[id][loop_cntr/128 - 1] = calib;
+                fTDCCalib[id][loop_cntr/128 - 1] = calib;
                 calib.clear();
             } 
         }
     }
-    
+
+    kPerformTDCCalib = true;
     return true;
 } 
 
@@ -259,11 +262,9 @@ int32_t unpacker::get_time_window(
         std::unordered_map<uint32_t, std::vector<hit_t>> &original_data, 
         std::unordered_map<uint32_t, std::vector<hit_t>> &filtered_data,
         std::unordered_map<uint32_t, std::vector<sigmat_t>> &preproc_data,
-        const std::unordered_map<uint32_t, std::string> &paths_to_tdc_calib,
         std::ifstream &fp ) {
 
     // input: file descriptor pointing to opened hld file,
-    // paths to tdc calibrations.
     // output: original, filtered and preproc data if found (by reference), 
     // meta data regarding the time window (by reference),
     // operation status (by value) - 0 in case of EOF, 1 in case of success, -1 in case of failure, 2 in case of error that may be recoverable
@@ -276,23 +277,10 @@ int32_t unpacker::get_time_window(
     // statics...
     static uint32_t queue_id = 0;
     static bool init_run = true;
-    static std::unordered_map<uint32_t, std::unordered_map<uint32_t, std::vector<uint32_t>>> tdc_calib;
 
     // during first run load the tdc calibration tables
     if ( init_run == true ) {
         init_run = false;
-
-        if ( kPerformTDCCalib ) {
-            int32_t succ = load_tdc_calib(paths_to_tdc_calib, tdc_calib);
-            
-            if ( !succ ) {
-                if ( verbosity > 0 ) {
-                    std::cout << "Error, TDC mapping tables were not loaded correctly" << std::endl;
-                }
-
-                return -1;
-            }
-        }
 
         // read file header from online data-stream
         if ( kIsOnline ) {
@@ -431,7 +419,7 @@ int32_t unpacker::get_time_window(
                         meta_data.endp_stats[endp_id].is_reference = true;
                     }
 
-                    calculate_time(endp_id, buff_v, tdc_calib); // fill the time information
+                    calculate_time(endp_id, buff_v, fTDCCalib); // fill the time information
 
                     // load only if the vector size if larger than 0
                     if ( buff_v.size() > 0 ) {
@@ -460,7 +448,7 @@ int32_t unpacker::get_time_window(
                         buff_v.push_back(buff);
                     } // for 
 
-                    calculate_time(endp_id, buff_v, tdc_calib); // fill the time information
+                    calculate_time(endp_id, buff_v, fTDCCalib); // fill the time information
                     filtered_data[endp_id] = buff_v;
 
                     break;
@@ -594,11 +582,9 @@ int32_t unpacker::get_time_window(
 int32_t unpacker::get_time_window_repaired( 
             meta_t &fixed_meta_data,
             std::unordered_map<uint32_t, std::vector<hit_t>> &fixed_data,
-            const std::unordered_map<uint32_t, std::string> &paths_to_tdc_calib,
             std::ifstream &fp ) {
 
     // input: file descriptor pointing to opened hld file,
-    // paths to tdc calibrations.
     // output: fixed data if found (by reference), 
     // meta data regarding the time window (by reference),
     // operation status (by value) - 0 in case of EOF, 1 in case of success, -1 in case of failure, 2 if the fix was performed successfully.
@@ -617,7 +603,7 @@ int32_t unpacker::get_time_window_repaired(
     fixed_meta_data.endp_stats.clear();
     fixed_data.clear();
 
-    int32_t ret = get_time_window(meta_data, original_data, filtered_data, preproc_data, paths_to_tdc_calib, fp);
+    int32_t ret = get_time_window(meta_data, original_data, filtered_data, preproc_data, fp);
 
     if ( ret == -1 || ret == 0 ) { // return normally on error or eof. There's nothing to be fixed.
         return ret;
@@ -742,7 +728,7 @@ void unpacker::calculate_time(
     // of time.
 
     // delete the endpoint data if its ID is not present in tdc calibrations.
-    if ( !tdc_calib.count(endp_id) ) {
+    if ( kPerformTDCCalib && !tdc_calib.count(endp_id) ) {
         v.clear();
         return;
     }
