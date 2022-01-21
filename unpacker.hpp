@@ -22,7 +22,7 @@ namespace unpacker {
 
     double kCoarsePeriod = 2352.941; // ps
     double kFineBinWidth = kCoarsePeriod / 128; // ps, more or less accurate (active TDC bin count is rather hard to be determined [100-128])
-    bool kPerformTDCCalib = true;
+    bool kPerformTDCCalib = false;
 
     bool kSkipAfterReferenceSample = true; // unpacker filter, rejects samples that arrived after the reference time
 
@@ -217,6 +217,7 @@ int32_t unpacker::read_queue( std::vector<uint32_t> &data, std::ifstream &fp ) {
 inline void unpacker::set_tdc_calib(tdc_calib_t& calib_data)
 {
   fTDCCalib = calib_data;
+  kPerformTDCCalib = true;
 }
 
 bool unpacker::load_tdc_calib( 
