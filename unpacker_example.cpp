@@ -29,12 +29,13 @@ int main(int argc, char **argv)
             paths_to_tdc_calib[ 0xa<<12 | i<<8 | j<< 4 ] = path_to_calib;
         } 
 
+    //    unpacker::load_tdc_calib(paths_to_tdc_calib);
 
     int succ = 1;
     while( succ ) {
-        succ = unpacker::get_time_window( meta_data, original_data, filtered_data, preproc_data, paths_to_tdc_calib, fp );
+        succ = unpacker::get_time_window( meta_data, original_data, filtered_data, preproc_data, fp );
 
-         /* print original data */
+        /* print original data */
         // for (auto const &pair: original_data)
         // {
         //     printf("{%02x\n", pair.first);
