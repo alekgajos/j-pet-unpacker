@@ -459,7 +459,11 @@ int32_t unpacker::get_time_window(
                 case 0xC: { // TODO: finish :) and validate
 
                     std::vector<sigmat_t> buff_v;
-
+                    
+                    // fill the structures to maintain further trigger id check for A stream
+                    // for stream C we can only take the concentrator trg_id
+                    meta_data.endp_stats[endp_id].trigger_id = meta_data.tw_trigger_id;
+                    
                     // there is some sigmat hexes from the endpoint
                     if (endp_len > 2) {
 
