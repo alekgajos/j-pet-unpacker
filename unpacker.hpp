@@ -45,17 +45,19 @@ inline uint32_t get_coarse(uint32_t sample);
 inline uint32_t get_fine(uint32_t sample);
 inline int32_t get_edge(uint32_t sample);
 
-inline bool read_4b(uint32_t* data, std::ifstream& fp);
-int32_t read_queue(std::vector<uint32_t>& data, std::ifstream& fp);
+inline bool read_4b(uint32_t* data, std::istream& fp);
+int32_t read_queue(std::vector<uint32_t>& data, std::istream& fp);
 
+inline void set_online_mode(bool is_online);
+  
 bool load_tdc_calib(const std::unordered_map<uint32_t, std::string>& paths_to_tdc_calib);
 inline void set_tdc_calib(tdc_calib_t& calib_data);
 
 int32_t get_time_window(meta_t& meta_data, std::unordered_map<uint32_t, std::vector<hit_t>>& original_data,
                         std::unordered_map<uint32_t, std::vector<hit_t>>& filtered_data,
-                        std::unordered_map<uint32_t, std::vector<sigmat_t>>& preproc_data, std::ifstream& fp);
+                        std::unordered_map<uint32_t, std::vector<sigmat_t>>& preproc_data, std::istream& fp);
 
-int32_t get_time_window_repaired(meta_t& fixed_meta_data, std::unordered_map<uint32_t, std::vector<hit_t>>& fixed_data, std::ifstream& fp);
+int32_t get_time_window_repaired(meta_t& fixed_meta_data, std::unordered_map<uint32_t, std::vector<hit_t>>& fixed_data, std::istream& fp);
 
 void calculate_time(uint32_t endp_id, std::vector<hit_t>& v,
                     std::unordered_map<uint32_t, std::unordered_map<uint32_t, std::vector<uint32_t>>>& tdc_calib);
@@ -138,7 +140,7 @@ inline uint32_t unpacker::get_fine(uint32_t sample) { return (sample & 0x7F); }
 
 inline int32_t unpacker::get_edge(uint32_t sample) { return (sample >> 31); }
 
-inline bool unpacker::read_4b(uint32_t* data, std::ifstream& fp)
+inline bool unpacker::read_4b(uint32_t* data, std::istream& fp)
 {
   // input: file descriptor pointing to opened hld file.
   // output: operation status (by value) - 0 in case of EOF, 1 in case of success;
@@ -167,7 +169,7 @@ inline bool unpacker::read_4b(uint32_t* data, std::ifstream& fp)
   return ret;
 }
 
-int32_t unpacker::read_queue(std::vector<uint32_t>& data, std::ifstream& fp)
+int32_t unpacker::read_queue(std::vector<uint32_t>& data, std::istream& fp)
 {
   // input: file descriptor pointing to opened hld file
   // output: std::vector filled with raw data from single EventBuilder queue (by reference),
@@ -224,6 +226,11 @@ inline void unpacker::set_tdc_calib(tdc_calib_t& calib_data)
   kPerformTDCCalib = true;
 }
 
+inline void unpacker::set_online_mode(bool is_online)
+{
+  kIsOnline = is_online;
+}
+
 bool unpacker::load_tdc_calib(const std::unordered_map<uint32_t, std::string>& paths_to_tdc_calib)
 {
 
@@ -268,7 +275,7 @@ bool unpacker::load_tdc_calib(const std::unordered_map<uint32_t, std::string>& p
 
 int32_t unpacker::get_time_window(meta_t& meta_data, std::unordered_map<uint32_t, std::vector<hit_t>>& original_data,
                                   std::unordered_map<uint32_t, std::vector<hit_t>>& filtered_data,
-                                  std::unordered_map<uint32_t, std::vector<sigmat_t>>& preproc_data, std::ifstream& fp)
+                                  std::unordered_map<uint32_t, std::vector<sigmat_t>>& preproc_data, std::istream& fp)
 {
 
   // input: file descriptor pointing to opened hld file,
@@ -629,7 +636,7 @@ foreach_concentrator:
   return 1;
 }
 
-int32_t unpacker::get_time_window_repaired(meta_t& fixed_meta_data, std::unordered_map<uint32_t, std::vector<hit_t>>& fixed_data, std::ifstream& fp)
+int32_t unpacker::get_time_window_repaired(meta_t& fixed_meta_data, std::unordered_map<uint32_t, std::vector<hit_t>>& fixed_data, std::istream& fp)
 {
 
   // input: file descriptor pointing to opened hld file,
