@@ -64,7 +64,7 @@ void calculate_time(uint32_t endp_id, std::vector<hit_t>& v,
 
 uint32_t get_ref(const std::vector<hit_t>& v);
 
-}; // namespace unpacker
+} // namespace unpacker
 
 inline uint32_t unpacker::reverse_DJ(uint32_t sample)
 {
