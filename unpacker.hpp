@@ -315,8 +315,7 @@ int32_t unpacker::get_time_window(meta_t& meta_data, std::unordered_map<uint32_t
 
   std::vector<uint32_t> raw_data;
 
-// loop forever till valid queue is found
-loop_till_valid_queue:
+  // loop forever till valid queue is found
   while (1)
   {
     int32_t succ = read_queue(raw_data, fp);
@@ -349,8 +348,7 @@ loop_till_valid_queue:
                    // just for help. Initially qi is set to 8 to skip first 8 words of queue,
                    // as these are its headers
 
-// loop over concentrators...
-foreach_concentrator:
+  // loop over concentrators...  
   for (; qi < raw_data.size();)
   {
     // parse 4 words from the concentrator's headers
@@ -376,7 +374,6 @@ foreach_concentrator:
     }
 
   // loop over endpoints...
-  foreach_endpoint:
     for (; qi < raw_data.size();)
     {
       // get endpoint data size (read the first word of the endpoint data).
@@ -415,8 +412,9 @@ foreach_concentrator:
 
         std::vector<hit_t> buff_v;
 
-      // loop over data in endpoint...
-      foreach_original_data:
+        // loop over data in endpoint...
+        // cppcheck-suppress unusedLabel
+        foreach_original_data:
         for (uint32_t ei = 0; qi < raw_data.size() && ei < endp_len; ei++, qi++)
         {
           // ei is the endpoint word helper-iterator.
@@ -480,6 +478,7 @@ foreach_concentrator:
 
         std::vector<hit_t> buff_v;
 
+        // cppcheck-suppress unusedLabel
       foreach_filtered_data:
         for (uint32_t ei = 0; qi < raw_data.size() && ei < endp_len; ei++, qi++)
         {
@@ -514,6 +513,7 @@ foreach_concentrator:
           uint32_t low_word;
           uint32_t high_word;
 
+          // cppcheck-suppress unusedLabel
         foreach_preprocessed_data:
           for (uint32_t ei = 0; qi < raw_data.size() && ei < endp_len; ei++, qi++)
           {
