@@ -9,6 +9,7 @@
 #include <string.h>
 #include <unordered_map>
 #include <vector>
+#include <algorithm>
 
 #include "unpacker_types.hpp"
 
@@ -51,7 +52,7 @@ int32_t read_queue(std::vector<uint32_t>& data, std::istream& fp);
 inline void set_online_mode(bool is_online);
   
 bool load_tdc_calib(const std::unordered_map<uint32_t, std::string>& paths_to_tdc_calib);
-inline void set_tdc_calib(tdc_calib_t& calib_data);
+inline void set_tdc_calib(const tdc_calib_t& calib_data);
 
 int32_t get_time_window(meta_t& meta_data, std::unordered_map<uint32_t, std::vector<hit_t>>& original_data,
                         std::unordered_map<uint32_t, std::vector<hit_t>>& filtered_data,
@@ -98,12 +99,12 @@ inline uint32_t unpacker::reverse_TID(uint32_t sample)
   a = sample & 0xFF;
   b = sample & 0xFF00;
   c = sample & 0xFF0000;
-  d = sample & 0xFF000000;
+  d = sample & 0xFF000000; //cppcheck-suppress unreadVariable
 
   a <<= 24;
   b <<= 8;
   c >>= 8;
-  d >>= 16;
+  d >>= 16; //cppcheck-suppress unreadVariable
 
   e = (a | b | c) >> 8;
 
@@ -217,7 +218,7 @@ int32_t unpacker::read_queue(std::vector<uint32_t>& data, std::istream& fp)
   return 1;
 }
 
-inline void unpacker::set_tdc_calib(tdc_calib_t& calib_data)
+inline void unpacker::set_tdc_calib(const tdc_calib_t& calib_data)
 {
   fTDCCalib = calib_data;
   kPerformTDCCalib = true;
@@ -439,12 +440,12 @@ int32_t unpacker::get_time_window(meta_t& meta_data, std::unordered_map<uint32_t
 
           uint32_t tdc_word = reverse_TDC(raw_data[qi]);
 
-          hit_t buff = {.sample = tdc_word,
+          hit_t hit = {.sample = tdc_word,
                         .time = -1, // initialize it to '-1', as it cannot be calculated now.
                         .channel_id = get_channel(tdc_word),
                         .is_falling_edge = get_edge(tdc_word)};
 
-          buff_v.push_back(buff);
+          buff_v.push_back(hit);
         } // for
 
         // run additional stats to see if the reference time is present. Unfortunatelly this needs to be done here.
@@ -482,9 +483,9 @@ int32_t unpacker::get_time_window(meta_t& meta_data, std::unordered_map<uint32_t
 
           uint32_t tdc_word = reverse_TDC(raw_data[qi]);
 
-          hit_t buff = {.sample = tdc_word, .time = -1, .channel_id = get_channel(tdc_word), .is_falling_edge = get_edge(tdc_word)};
+          hit_t hit = {.sample = tdc_word, .time = -1, .channel_id = get_channel(tdc_word), .is_falling_edge = get_edge(tdc_word)};
 
-          buff_v.push_back(buff);
+          buff_v.push_back(hit);
         } // for
 
         calculate_time(endp_id, buff_v, fTDCCalib); // fill the time information
@@ -531,13 +532,13 @@ int32_t unpacker::get_time_window(meta_t& meta_data, std::unordered_map<uint32_t
               { // even is the upper data part and completes a sigmat
                 high_word = reverse_TDC(raw_data[qi]);
 
-                sigmat_t buff;
-                buff.lead_time = low_word & (0x03ffffff);
-                buff.tot_time = high_word & (0x03ffffff);
-                buff.strip_id = (low_word & 0x3c000000) >> 26;
-                buff.multiplicity = (high_word & 0x3c000000) >> 26;
+                sigmat_t sigmat;
+                sigmat.lead_time = low_word & (0x03ffffff);
+                sigmat.tot_time = high_word & (0x03ffffff);
+                sigmat.strip_id = (low_word & 0x3c000000) >> 26;
+                sigmat.multiplicity = (high_word & 0x3c000000) >> 26;
 
-                buff_v.push_back(buff);
+                buff_v.push_back(sigmat);
               }
             }
 
@@ -776,14 +777,11 @@ uint32_t unpacker::get_ref(const std::vector<hit_t>& v)
   }
 
   // but if it's not true - iterate through the entire vector
-  for (auto const& elem : v)
-  {
-    if (get_channel(elem.sample) == 104)
-    {
-      return elem.sample;
-    }
+  auto it = std::find_if(v.begin(), v.end(), [](const hit_t& hit){return get_channel(hit.sample) == 104;});
+  if( it != v.end() ){
+    return it->sample;
   }
-
+  
   return 0;
 }
 

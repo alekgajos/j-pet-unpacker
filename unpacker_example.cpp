@@ -8,8 +8,6 @@ int main(int argc, char **argv)
 {
     std::ifstream fp( argv[1], std::ios::in | std::ios::binary );
 
-    std::vector<unsigned int> data;
-
     unpacker::meta_t meta_data;
     std::unordered_map<unsigned int, std::vector<unpacker::hit_t>> original_data;
     std::unordered_map<unsigned int, std::vector<unpacker::hit_t>> filtered_data;
