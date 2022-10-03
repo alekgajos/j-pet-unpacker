@@ -146,15 +146,12 @@ inline bool unpacker::read_4b(uint32_t* data, std::istream& fp)
   // output: operation status (by value) - 0 in case of EOF, 1 in case of success;
   // 4-byte hld word (by pointer)
 
-  static uint32_t byte_cntr = 0;
-
   unsigned char buffer[4];
   bool ret = true;
 
   if (fp.read((char*)(&buffer[0]), 4))
   {
     *data = buffer[3] << 24 | buffer[2] << 16 | buffer[1] << 8 | buffer[0];
-    byte_cntr += 4;
   }
   else
   {
