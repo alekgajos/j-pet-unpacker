@@ -99,12 +99,14 @@ inline uint32_t unpacker::reverse_TID(uint32_t sample)
   a = sample & 0xFF;
   b = sample & 0xFF00;
   c = sample & 0xFF0000;
-  d = sample & 0xFF000000; //cppcheck-suppress unreadVariable
+  //cppcheck-suppress unreadVariable
+  d = sample & 0xFF000000;
 
   a <<= 24;
   b <<= 8;
   c >>= 8;
-  d >>= 16; //cppcheck-suppress unreadVariable
+  //cppcheck-suppress unreadVariable
+  d >>= 16; 
 
   e = (a | b | c) >> 8;
 
