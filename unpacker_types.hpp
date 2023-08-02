@@ -7,6 +7,7 @@
 
 namespace unpacker {
 
+
     typedef struct {
         uint32_t trigger_id;
         bool overflow_flag;
@@ -39,8 +40,6 @@ namespace unpacker {
         int32_t strip_id;
         int32_t multiplicity;
     } sigmat_t;
-
-  typedef std::unordered_map<uint32_t, std::unordered_map<uint32_t, std::vector<uint32_t>>> tdc_calib_t;
   
 } // namespace unpacker
 
