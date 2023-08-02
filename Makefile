@@ -6,12 +6,16 @@ CC = g++
 CFLAGS  = -g -Wall
 
 # the build target executable:
-TARGET = unpacker_example
+MODULAR_EXAMPLE = unpacker_example
+TRB_EXAMPLE = trb_unpacker_example
 
-all: $(TARGET)
+all: $(MODULAR_EXAMPLE) $(TRB_EXAMPLE)
 
-$(TARGET): unpacker_example.cpp
-	$(CC) $(CFLAGS) -o $(TARGET) $(TARGET).cpp
+$(MODULAR_EXAMPLE): unpacker_example.cpp unpacker.hpp
+	$(CC) $(CFLAGS) -o $@ $<
+
+$(TRB_EXAMPLE): trb_unpacker_example.cpp trb_unpacker.hpp
+	$(CC) $(CFLAGS) -o $@ $<
 
 clean:
-	$(RM) $(TARGET)
+	$(RM) ${MODULAR_EXAMPLE} $(TRB_EXAMPLE)

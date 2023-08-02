@@ -12,6 +12,7 @@
 #include <algorithm>
 
 #include "unpacker_types.hpp"
+#include "tdc_calib.hpp"
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-label"
@@ -24,7 +25,6 @@ uint32_t verbosity = 0; // 0 - none, 1 - crit. errors, 2 - errors/warnings
 
 double kCoarsePeriod = 2352.941;            // ps
 double kFineBinWidth = kCoarsePeriod / 128; // ps, more or less accurate (active TDC bin count is rather hard to be determined [100-128])
-bool kPerformTDCCalib = false;
 
 bool kSkipAfterReferenceSample = true; // unpacker filter, rejects samples that arrived after the reference time
 
@@ -34,8 +34,6 @@ uint32_t kTimeCapThreshold = 50000000; // ps
 uint32_t kOverflowLimit = 400; // if there are more samples in packet, overflow is detected and marked as warning in endp_stats_t struct.
 
 bool kIsOnline = false; // reject additionals headers from online datastream
-
-tdc_calib_t fTDCCalib;
 
 // functions
 inline uint32_t reverse_TDC(uint32_t sample);
@@ -50,9 +48,6 @@ inline bool read_4b(uint32_t* data, std::istream& fp);
 int32_t read_queue(std::vector<uint32_t>& data, std::istream& fp);
 
 inline void set_online_mode(bool is_online);
-  
-bool load_tdc_calib(const std::unordered_map<uint32_t, std::string>& paths_to_tdc_calib);
-inline void set_tdc_calib(const tdc_calib_t& calib_data);
 
 int32_t get_time_window(meta_t& meta_data, std::unordered_map<uint32_t, std::vector<hit_t>>& original_data,
                         std::unordered_map<uint32_t, std::vector<hit_t>>& filtered_data,
@@ -220,57 +215,9 @@ int32_t unpacker::read_queue(std::vector<uint32_t>& data, std::istream& fp)
   return 1;
 }
 
-inline void unpacker::set_tdc_calib(const tdc_calib_t& calib_data)
-{
-  fTDCCalib = calib_data;
-  kPerformTDCCalib = true;
-}
-
 inline void unpacker::set_online_mode(bool is_online)
 {
   kIsOnline = is_online;
-}
-
-bool unpacker::load_tdc_calib(const std::unordered_map<uint32_t, std::string>& paths_to_tdc_calib)
-{
-
-  // loads tdc calibrations from .txt files.
-  // input map of <16-bit endpoint id, path to tdc calibration file>, e.g. <0xa110, "/storage/tdc_calibs/0xa110.txt">
-
-  for (auto const& pair : paths_to_tdc_calib)
-  {
-    uint32_t id = pair.first;
-    std::vector<uint32_t> calib;
-    std::ifstream calib_file(pair.second);
-
-    if (!calib_file)
-    {
-      if (verbosity > 0)
-      {
-        std::cout << "Error! File " << pair.second.c_str() << " could not be open." << std::endl;
-      }
-
-      kPerformTDCCalib = false;
-      return false;
-    }
-
-    uint32_t buff;
-    uint32_t loop_cntr = 0;
-    while (calib_file >> buff)
-    {
-      loop_cntr++;
-      calib.push_back(buff);
-
-      if (loop_cntr % 128 == 0)
-      {
-        fTDCCalib[id][loop_cntr / 128 - 1] = calib;
-        calib.clear();
-      }
-    }
-  }
-
-  kPerformTDCCalib = true;
-  return true;
 }
 
 int32_t unpacker::get_time_window(meta_t& meta_data, std::unordered_map<uint32_t, std::vector<hit_t>>& original_data,
@@ -461,7 +408,7 @@ int32_t unpacker::get_time_window(meta_t& meta_data, std::unordered_map<uint32_t
           meta_data.endp_stats[endp_id].is_reference = true;
         }
 
-        calculate_time(endp_id, buff_v, fTDCCalib); // fill the time information
+        calculate_time(endp_id, buff_v, tdc_calib::tdc_calib); // fill the time information
 
         // load only if the vector size if larger than 0
         if (buff_v.size() > 0)
@@ -490,7 +437,7 @@ int32_t unpacker::get_time_window(meta_t& meta_data, std::unordered_map<uint32_t
           buff_v.push_back(hit);
         } // for
 
-        calculate_time(endp_id, buff_v, fTDCCalib); // fill the time information
+        calculate_time(endp_id, buff_v, tdc_calib::tdc_calib); // fill the time information
         filtered_data[endp_id] = buff_v;
 
         break;
@@ -796,7 +743,7 @@ void unpacker::calculate_time(uint32_t endp_id, std::vector<hit_t>& v,
   // of time.
 
   // delete the endpoint data if its ID is not present in tdc calibrations.
-  if (kPerformTDCCalib && !tdc_calib.count(endp_id))
+  if (tdc_calib::perform_tdc_calib && !tdc_calib.count(endp_id))
   {
     v.clear();
     return;
@@ -817,7 +764,7 @@ void unpacker::calculate_time(uint32_t endp_id, std::vector<hit_t>& v,
   double r, t;
 
   // calculate the counter values for the reference sample
-  if (kPerformTDCCalib)
+  if (tdc_calib::perform_tdc_calib)
   {
     r = get_coarse(ref) * kCoarsePeriod - tdc_calib[endp_id][get_channel(ref)][get_fine(ref)];
   }
@@ -856,7 +803,7 @@ void unpacker::calculate_time(uint32_t endp_id, std::vector<hit_t>& v,
       }
 
       // calculate the counter value for the sample depending on calibrations used or not
-      if (kPerformTDCCalib)
+      if (tdc_calib::perform_tdc_calib)
       {
         t = get_coarse(i->sample) * kCoarsePeriod - tdc_calib[endp_id][(i->channel_id)][get_fine(i->sample)];
       }
