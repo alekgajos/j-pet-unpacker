@@ -15,10 +15,10 @@ typedef std::unordered_map<uint32_t,
                            std::unordered_map<uint32_t, std::vector<uint32_t>>>
     tdc_calib_t;
 
-tdc_calib_t tdc_calib;
-bool perform_tdc_calib = false;
+static tdc_calib_t tdc_calib;
+static bool perform_tdc_calib = false;
 
-bool load_tdc_calib(
+inline bool load_tdc_calib(
     const std::unordered_map<uint32_t, std::string> &paths_to_tdc_calib);
 inline void set_tdc_calib(const tdc_calib_t &calib_data);
 
@@ -30,7 +30,7 @@ inline void unpacker::tdc_calib::set_tdc_calib(const tdc_calib_t &calib_data) {
   perform_tdc_calib = true;
 }
 
-bool unpacker::tdc_calib::load_tdc_calib(
+inline bool unpacker::tdc_calib::load_tdc_calib(
     const std::unordered_map<uint32_t, std::string> &paths_to_tdc_calib) {
 
   // loads tdc calibrations from .txt files.

@@ -1,5 +1,5 @@
-#ifndef UNPACKER_H
-#define UNPACKER_H
+#ifndef TRB_UNPACKER_H
+#define TRB_UNPACKER_H
 
 #include <algorithm>
 #include <cassert>
